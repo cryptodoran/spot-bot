@@ -1,0 +1,41 @@
+# === BOT RESULTS QUICK COMMANDS ===
+# 1. Show final equity  →  python  +  equity script
+# 2. Show trades/profit →  python  +  trade script
+# 3. View charts        →  streamlit run dashboard.py
+
+# You can run these in the python console
+# to check equity, profits, and see your
+# dashboard in browser
+
+
+import sqlite3, pandas as pd
+con = sqlite3.connect('spotbot.db')
+# Show the last recorded total portfolio value
+equity = pd.read_sql('SELECT * FROM equity ORDER BY ts DESC LIMIT 1', con)
+print("\n--- FINAL EQUITY ---")
+print(equity)
+
+con.close()
+exit()
+
+------
+
+import sqlite3, pandas as pd
+con = sqlite3.connect('spotbot.db')
+
+# View last 10 trades
+trades = pd.read_sql('SELECT * FROM trades ORDER BY ts DESC', con)
+print("\n--- LAST 10 TRADES ---")
+print(trades.head(10))
+
+# View total realized profit/loss
+print("\n--- TOTAL PROFIT (USD) ---")
+print(round(trades["pnl"].sum(), 2))
+
+con.close()
+exit()
+
+------
+
+# === VISUAL DASHBOARD ===
+streamlit run dashboard.py
