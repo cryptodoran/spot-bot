@@ -33,5 +33,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     # Trend slope and crossover distance
     df["macd_slope"] = df["macd"].diff()
     df["ma_distance"] = (df["ma_fast"] - df["ma_slow"]) / df["ma_slow"]
+    # --- Extra volatility and momentum features ---
+    df["ema_diff"] = df["ema_fast"] - df["ema_slow"]
+    df["rsi_change"] = df["rsi"].diff()
+
+    # simple 14-period price range as a crude ATR proxy
+    df["atr"] = df["high"].rolling(14).max() - df["low"].rolling(14).min()
+
+    # Bollinger bands (20-period)
+    mid = df["close"].rolling(20).mean()
+    std = df["close"].rolling(20).std()
+    df["boll_up"] = mid + 2 * std
+    df["boll_down"] = mid - 2 * std
+    df["boll_width"] = df["boll_up"] - df["boll_down"]
 
     return df.dropna()
