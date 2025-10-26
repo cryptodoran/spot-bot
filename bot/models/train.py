@@ -17,7 +17,8 @@ def prepare_dataset(df):
     X = feat[[
         "ret1", "vol", "ma_ratio", "rsi", "rvol",
         "ema_fast", "ema_slow", "macd", "signal", "macd_hist",
-        "roc", "momentum", "macd_slope", "ma_distance"
+        "roc", "momentum", "macd_slope", "ma_distance",
+        "ema_diff", "rsi_change", "atr", "boll_width"
     ]].values
 
     y = feat["y_up"].values
