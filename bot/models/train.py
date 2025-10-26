@@ -5,6 +5,7 @@ from bot.features.indicators import build_features
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 import pickle
+from xgboost import XGBClassifier
 
 def load_candles():
     with engine.begin() as con:
@@ -20,7 +21,6 @@ def prepare_dataset(df):
         "roc", "momentum", "macd_slope", "ma_distance",
         "ema_diff", "rsi_change", "atr", "boll_width"
     ]].values
-
     y = feat["y_up"].values
     return X, y
 
@@ -29,10 +29,14 @@ def train():
     X, y = prepare_dataset(df)
     scaler = StandardScaler()
     Xs = scaler.fit_transform(X)
-    model = RandomForestClassifier(
-        n_estimators=200,
+    model = XGBClassifier(
+        n_estimators=500,
         max_depth=6,
-        random_state=42
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        tree_method="hist"
     )
     model.fit(Xs, y)
     with open("model.pkl", "wb") as f:
