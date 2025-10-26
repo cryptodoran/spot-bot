@@ -9,7 +9,10 @@ from xgboost import XGBClassifier
 
 def load_candles():
     with engine.begin() as con:
-        return pd.read_sql(text("SELECT ts, close, volume FROM candles ORDER BY ts"), con)
+        return pd.read_sql(
+            text("SELECT ts, open, high, low, close, volume FROM candles ORDER BY ts"),
+            con
+        )
 
 def prepare_dataset(df):
     feat = build_features(df)
