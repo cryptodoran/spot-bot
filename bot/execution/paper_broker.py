@@ -1,54 +1,122 @@
-from dataclasses import dataclass
+import pandas as pd
+import time
 from sqlalchemy import text
 from bot.db import engine
-from bot import config
-import time
 
-@dataclass
-class Portfolio:
-    usd: float
-    asset_qty: float
 
 class PaperBroker:
-    def __init__(self):
-        self.pf = Portfolio(usd=config.STARTING_USD, asset_qty=0.0)
+    def __init__(self, starting_balance=10000.0):
+        self.balance = starting_balance
+        self.positions = []  # list of open positions
+        self.trades = []     # closed trades
 
-    def mark_to_market(self, price):
-        equity = self.pf.usd + self.pf.asset_qty * price
-        with engine.begin() as con:
-            con.execute(text("INSERT INTO equity(ts,equity) VALUES(:ts,:eq)"),
-                        dict(ts=int(time.time()*1000), eq=equity))
-        return equity
+    def buy(self, ts, price, qty=None, risk_pct=1.0, symbol="BTC/USD"):
+        """Open a long position"""
+        if price is None:
+            print("Cannot execute buy — price is None.")
+            return
 
-    def buy(self, ts, price, risk_pct):
-        risk_usd = self.pf.usd * (risk_pct / 100)
-        qty = risk_usd / price
-        cost = qty * price
-        if cost > self.pf.usd:
-            cost = self.pf.usd
-            qty = cost / price
-        self.pf.usd -= cost
-        self.pf.asset_qty += qty
+        if qty is None:
+            qty = (self.balance * (risk_pct / 100)) / price
+
+        pos = {
+            "ts_open": ts,
+            "symbol": symbol,
+            "side": "LONG",
+            "qty": qty,
+            "entry": price
+        }
+        self.positions.append(pos)
+
+        # Save trade to DB
         with engine.begin() as con:
             con.execute(text("""
-            INSERT INTO trades(ts_open, symbol, side, qty, entry)
-            VALUES(:ts,:sym,'LONG',:qty,:entry)
-            """), dict(ts=ts, sym=config.SYMBOL, qty=qty, entry=price))
-        return qty
+                INSERT INTO trades (ts_open, symbol, side, qty, entry)
+                VALUES (:ts_open, :symbol, :side, :qty, :entry)
+            """), dict(
+                ts_open=ts,
+                symbol=symbol,
+                side="LONG",
+                qty=qty,
+                entry=price
+            ))
+
+        print(f"Opened LONG at {price:.2f}, qty={qty:.6f}")
 
     def close_all(self, ts, price):
-        qty = self.pf.asset_qty
-        if qty <= 0:
+        """Close all open positions"""
+        if not hasattr(self, "positions"):
+            self.positions = []
+
+        if price is None:
+            print("Cannot close positions — price is None.")
             return
-        proceeds = qty * price
-        self.pf.usd += proceeds
-        self.pf.asset_qty = 0
-        with engine.begin() as con:
-            trade = con.execute(text(
-                "SELECT id, entry FROM trades WHERE ts_close IS NULL ORDER BY id DESC LIMIT 1"
-            )).mappings().first()
-            if trade:
-                pnl = proceeds - (qty * trade["entry"])
+
+        if not self.positions:
+            print("No open positions to close.")
+            return
+
+        for pos in list(self.positions):
+            qty = pos.get("qty")
+            entry = pos.get("entry")
+            side = pos.get("side")
+            symbol = pos.get("symbol", "BTC/USD")
+
+            if qty is None or entry is None:
+                print("Skipping invalid position:", pos)
+                continue
+
+            pnl = (price - entry) * qty if side == "LONG" else (entry - price) * qty
+            self.balance += pnl
+
+            self.trades.append({
+                "ts_open": pos["ts_open"],
+                "ts_close": ts,
+                "symbol": symbol,
+                "side": side,
+                "qty": qty,
+                "entry": entry,
+                "exit": price,
+                "pnl": pnl
+            })
+
+            # --- Update DB record for this trade ---
+            with engine.begin() as con:
                 con.execute(text("""
-                    UPDATE trades SET ts_close=:tsc, exit=:ex, pnl=:p WHERE id=:i
-                """), dict(tsc=ts, ex=price, p=pnl, i=trade["id"]))
+                    UPDATE trades
+                    SET ts_close = :ts_close,
+                        exit = :exit,
+                        pnl = :pnl
+                    WHERE ts_open = :ts_open
+                """), dict(
+                    ts_close=ts,
+                    exit=price,
+                    pnl=pnl,
+                    ts_open=pos["ts_open"]
+                ))
+
+    def mark_to_market(self, price):
+        """Update open trade unrealized PnL (optional)"""
+        if not self.positions:
+            return
+
+        total_pnl = 0
+        for pos in self.positions:
+            entry = pos["entry"]
+            qty = pos["qty"]
+            side = pos["side"]
+            pnl = (price - entry) * qty if side == "LONG" else (entry - price) * qty
+            total_pnl += pnl
+
+        print(f"Mark-to-market unrealized PnL: {total_pnl:.2f}")
+
+    def export_trades(self, path="D:/Downloads/paper_trades.csv"):
+        """Save all closed trades to CSV"""
+        if not self.trades:
+            print("No trades to export.")
+            return
+
+        df = pd.DataFrame(self.trades)
+        df.to_csv(path, index=False)
+        print(f"Trades exported to {path}")
+
